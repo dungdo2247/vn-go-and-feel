@@ -1,0 +1,6 @@
+{
+  "name": "Việt Nam Đi & Nhớ - Vietnam Travel Planner & Journal",
+  "description": "Ứng dụng du lịch Việt Nam: Lên lịch trình AI thông minh, Nhật ký ảnh lưu giữ kỷ niệm và Bản đồ check-in 63 tỉnh thành hình chữ S.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
