@@ -6,40 +6,17 @@ import {
   Sparkles, Camera, Image as ImageIcon, Upload, Heart, 
   MapPin, PenTool, Hash, Bookmark, Trash2, ArrowRight
 } from 'lucide-react';
+import { userStorageKey } from '../lib/userStorage';
 import confetti from 'canvas-confetti';
-
-// 6 Curated High-Quality Representative Vietnam Photos for fast demo
-const DEMO_PHOTOS = [
-  {
-    id: 'demo_1',
-    name: 'Ruộng bậc thang Mù Cang Chải',
-    location: 'Yên Bái - Mù Cang Chải',
-    mood: 'Choáng ngợp, tự do và bình yên trước núi rừng Tây Bắc',
-    imageUrl: 'https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1200&q=80',
-  },
-  {
-    id: 'demo_2',
-    name: 'Đèn lồng Phố Cổ Hội An',
-    location: 'Quảng Nam - Phố cổ Hội An',
-    mood: 'Hoài niệm, ấm áp và lãng mạn bên bờ sông Hoài',
-    imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1200&q=80',
-  },
-  {
-    id: 'demo_3',
-    name: 'Vịnh Hạ Long kỳ vĩ',
-    location: 'Quảng Ninh - Vịnh Hạ Long',
-    mood: 'Hùng vĩ, ngỡ ngàng trước non nước ngàn năm',
-    imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
-  },
-];
 
 export const PhotoJournal: React.FC = () => {
   const { currentUser, effectiveUserId } = useAuth();
+  const journalsKey = userStorageKey(effectiveUserId, 'photo-journals');
   const [activeTab, setActiveTab] = useState<'create' | 'feed'>('create');
-  const [selectedImage, setSelectedImage] = useState<string>(DEMO_PHOTOS[0].imageUrl);
+  const [selectedImage, setSelectedImage] = useState<string>('');
   const [selectedMimeType, setSelectedMimeType] = useState<string>('image/jpeg');
-  const [location, setLocation] = useState<string>(DEMO_PHOTOS[0].location);
-  const [mood, setMood] = useState<string>(DEMO_PHOTOS[0].mood);
+  const [location, setLocation] = useState<string>('');
+  const [mood, setMood] = useState<string>('');
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedEntry, setGeneratedEntry] = useState<JournalEntry | null>(null);
@@ -50,10 +27,12 @@ export const PhotoJournal: React.FC = () => {
 
   // Load saved journals from localStorage & Cloud Firestore
   useEffect(() => {
+    let cancelled = false;
     try {
-      const stored = localStorage.getItem('vietnam_photo_journals');
+      const stored = localStorage.getItem(journalsKey);
       if (stored) {
-        setSavedEntries(JSON.parse(stored));
+        const entries = JSON.parse(stored);
+        if (Array.isArray(entries)) setSavedEntries(entries);
       }
     } catch (e) {
       console.error(e);
@@ -61,18 +40,20 @@ export const PhotoJournal: React.FC = () => {
 
     if (effectiveUserId) {
       loadJournalsFromCloud(effectiveUserId).then((cloudJournals) => {
-        if (cloudJournals && cloudJournals.length > 0) {
+        if (!cancelled && cloudJournals && cloudJournals.length > 0) {
           setSavedEntries((prev) => {
             const map = new Map<string, JournalEntry>();
             prev.forEach((j) => map.set(j.id, j));
             cloudJournals.forEach((j) => map.set(j.id, j));
             const merged = Array.from(map.values());
-            localStorage.setItem('vietnam_photo_journals', JSON.stringify(merged));
+            try { localStorage.setItem(journalsKey, JSON.stringify(merged)); }
+            catch (error) { console.warn('Could not cache journals:', error); }
             return merged;
           });
         }
       });
     }
+    return () => { cancelled = true; };
   }, [effectiveUserId]);
 
   // Handle image upload from user device
@@ -88,14 +69,6 @@ export const PhotoJournal: React.FC = () => {
       }
     };
     reader.readAsDataURL(file);
-  };
-
-  // Select one of the iconic demo photos
-  const handleSelectDemoPhoto = (photo: typeof DEMO_PHOTOS[0]) => {
-    setSelectedImage(photo.imageUrl);
-    setSelectedMimeType('image/jpeg');
-    setLocation(photo.location);
-    setMood(photo.mood);
   };
 
   // Call server-side API (Prompt 2)
@@ -135,7 +108,7 @@ export const PhotoJournal: React.FC = () => {
           month: '2-digit',
           year: 'numeric',
         }),
-        likes: 1,
+        likes: 0,
       };
 
       setGeneratedEntry(newEntry);
@@ -155,9 +128,10 @@ export const PhotoJournal: React.FC = () => {
 
   const handleSaveToAlbum = () => {
     if (!generatedEntry) return;
-    const updated = [generatedEntry, ...savedEntries];
+    const updated = [generatedEntry, ...savedEntries.filter(entry => entry.id !== generatedEntry.id)];
     setSavedEntries(updated);
-    localStorage.setItem('vietnam_photo_journals', JSON.stringify(updated));
+    try { localStorage.setItem(journalsKey, JSON.stringify(updated)); }
+    catch (error) { setErrorMessage('Không thể lưu nhật ký trên trình duyệt này.'); }
 
     // Save to Cloud Firestore
     if (effectiveUserId) {
@@ -172,13 +146,17 @@ export const PhotoJournal: React.FC = () => {
       item.id === id ? { ...item, likes: (item.likes || 0) + 1 } : item
     );
     setSavedEntries(updated);
-    localStorage.setItem('vietnam_photo_journals', JSON.stringify(updated));
+    try { localStorage.setItem(journalsKey, JSON.stringify(updated)); }
+    catch (error) { setErrorMessage('Không thể lưu nhật ký trên trình duyệt này.'); }
+    const entry = updated.find(item => item.id === id);
+    if (entry) void saveJournalToCloud(effectiveUserId, entry);
   };
 
   const handleDeleteEntry = (id: string) => {
     const updated = savedEntries.filter((item) => item.id !== id);
     setSavedEntries(updated);
-    localStorage.setItem('vietnam_photo_journals', JSON.stringify(updated));
+    try { localStorage.setItem(journalsKey, JSON.stringify(updated)); }
+    catch (error) { setErrorMessage('Không thể lưu nhật ký trên trình duyệt này.'); }
 
     // Delete from Cloud Firestore
     if (effectiveUserId) {
@@ -259,11 +237,11 @@ export const PhotoJournal: React.FC = () => {
 
               {/* Photo Preview Box */}
               <div className="relative rounded-2xl overflow-hidden aspect-[4/3] bg-slate-950 flex items-center justify-center border border-sky-100 shadow-inner group">
-                <img
+                {selectedImage ? <img
                   src={selectedImage}
                   alt="Travel memory preview"
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-102"
-                />
+                /> : <p className="text-slate-300 text-sm">Tải ảnh chuyến đi của bạn để bắt đầu</p>}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
                 <div className="absolute bottom-3 left-3 right-3 text-white pointer-events-none">
                   <p className="text-xs font-bold flex items-center gap-1">
@@ -273,35 +251,6 @@ export const PhotoJournal: React.FC = () => {
                   <p className="text-[11px] text-white/80 line-clamp-1 italic mt-0.5">
                     &ldquo;{mood}&rdquo;
                   </p>
-                </div>
-              </div>
-
-              {/* Presets Gallery Chips */}
-              <div>
-                <p className="text-[11px] text-slate-400 font-medium mb-1.5">
-                  Hoặc chọn nhanh ảnh mẫu danh thắng Việt Nam:
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {DEMO_PHOTOS.map((photo) => (
-                    <button
-                      key={photo.id}
-                      onClick={() => handleSelectDemoPhoto(photo)}
-                      className={`relative rounded-xl overflow-hidden aspect-[16/10] border-2 transition-all cursor-pointer ${
-                        selectedImage === photo.imageUrl
-                          ? 'border-cyan-500 ring-2 ring-cyan-200'
-                          : 'border-transparent opacity-75 hover:opacity-100'
-                      }`}
-                    >
-                      <img
-                        src={photo.imageUrl}
-                        alt={photo.name}
-                        className="w-full h-full object-cover"
-                      />
-                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[9px] font-bold p-0.5 truncate text-center">
-                        {photo.name.split(' ')[0]}
-                      </span>
-                    </button>
-                  ))}
                 </div>
               </div>
 

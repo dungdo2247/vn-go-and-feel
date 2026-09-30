@@ -2,8 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { 
   initAuthListener, signInWithGoogle, logOut, 
-  testFirestoreConnection, saveVisitedProvincesToCloud, loadVisitedProvincesFromCloud,
-  getOrCreateGuestId
+  saveVisitedProvincesToCloud, loadVisitedProvincesFromCloud
 } from '../lib/firebase';
 
 interface AuthContextType {
@@ -20,7 +19,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   currentUser: null,
-  effectiveUserId: 'guest_default',
+  effectiveUserId: '',
   isAnonymous: true,
   isCloudReady: false,
   isSyncing: false,
@@ -32,19 +31,15 @@ const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [guestId] = useState<string>(() => getOrCreateGuestId());
   const [isCloudReady, setIsCloudReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const effectiveUserId = currentUser ? currentUser.uid : guestId;
+  const effectiveUserId = currentUser && !currentUser.isAnonymous ? currentUser.uid : '';
 
   useEffect(() => {
-    // 1. Test connection to Firestore on boot
-    testFirestoreConnection();
-
-    // 2. Listen to Auth State
+    // Restore the signed-in account.
     const unsubscribe = initAuthListener((user) => {
-      setCurrentUser(user);
+      setCurrentUser(user && !user.isAnonymous ? user : null);
       setIsCloudReady(true);
     });
 
@@ -71,6 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const syncVisitedToCloud = async (provinces: string[]) => {
+    if (!effectiveUserId) return;
     setIsSyncing(true);
     try {
       await saveVisitedProvincesToCloud(effectiveUserId, provinces);
@@ -80,6 +76,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const fetchVisitedFromCloud = async () => {
+    if (!effectiveUserId) return null;
     return await loadVisitedProvincesFromCloud(effectiveUserId);
   };
 

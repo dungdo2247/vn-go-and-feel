@@ -25,7 +25,7 @@ Firebase Authentication/Firestore tiếp tục sử dụng cấu hình hiện c�
 7. Mở URL `*.pages.dev` do Cloudflare cấp.
 8. Firebase Console → Authentication → Settings → Authorized domains:
    thêm hostname `*.pages.dev` cụ thể của app và custom domain nếu có (không thêm protocol/path).
-   Bật Google sign-in; bật Anonymous sign-in nếu muốn khách có danh tính Firebase.
+   Bật Google sign-in; workspace cá nhân chỉ dành cho tài khoản Google đã đăng nhập.
 
 `wrangler.jsonc` là cấu hình Pages, output `dist`; `public/_routes.json` chỉ gọi
 Functions cho `/api/*`. Firebase không cần chuyển sang Cloudflare.
@@ -77,13 +77,33 @@ Request JSON giới hạn 25 MB, tương đương giới hạn Express cũ.
 - Khi thiếu secret, API trả JSON lỗi rõ ràng thay vì trả HTML.
 - Kiểm tra quyền truy cập model/quota của Gemini key nếu AI báo lỗi.
 
-## Quyền dữ liệu hiện có
+## Dữ liệu theo tài khoản
 
-Chuyển hosting không tự triển khai `firestore.rules`. File hiện tại cho phép khách truy cập
-đường dẫn `guest_*`, mọi người tạo/sửa `publicJournals`, và đọc/ghi `/test`.
-Cần siết quyền Firestore trên đúng database trước khi lưu dữ liệu người dùng thật.
-Các API AI hiện không yêu cầu đăng nhập, như backend cũ; cần giới hạn lượt gọi
-phù hợp khi mở rộng sử dụng public vì tất cả lượt gọi dùng quota của key này.
+- Đăng nhập Google trước khi mở workspace cá nhân.
+- Lịch trình, lịch trình đang xem, nhật ký và tỉnh đã đi được cache theo Firebase UID.
+- Đổi tài khoản/đăng xuất đóng workspace cũ; phản hồi tải dữ liệu cũ không nhập vào tài khoản mới.
+- Tài khoản mới không có dữ liệu mẫu. Form trống; không tự chọn ảnh mẫu.
+- Nhật ký chỉ ghi vào `users/{uid}/journals`, không tự công khai.
+- Key local chung từ bản cũ không được tự nhập vào tài khoản vì không xác định được chủ sở hữu.
+- Dữ liệu đã lưu trên Firestore dưới UID vẫn được tải về cho đúng tài khoản.
+
+### Áp dụng quyền Firestore (bắt buộc, tách riêng với deploy Pages)
+
+Cloudflare không tự deploy Firestore rules. Repo có `firebase.json` trỏ đúng named database
+`ai-studio-vitnaminhvietnam-4b25c6e9-7a01-431e-8772-b18609a8456c`.
+
+Chạy trong thư mục repo đã checkout nhánh `cloudflare`:
+
+```sh
+npx firebase-tools login
+npx firebase-tools deploy --only firestore:rules --project gen-lang-client-0850321147
+```
+
+Rules chỉ cho chủ UID đọc/ghi dữ liệu; chặn guest/anonymous và chặn đọc nhật ký của người khác,
+bao gồm các bản sao public cũ. Không xóa dữ liệu cũ.
+
+Các API AI là stateless và vẫn chưa yêu cầu đăng nhập ở server; tất cả dùng quota của Gemini key.
+Quyền sở hữu dữ liệu được thực thi ở Firestore, không phụ thuộc vào việc ẩn UI.
 
 ## Tài liệu
 

@@ -5,7 +5,7 @@ export const onRequestPost = createApiHandler(async (body, apiKey) => {
 
     const listStr = Array.isArray(visitedProvinces) && visitedProvinces.length > 0
       ? visitedProvinces.join(', ')
-      : 'Bà Rịa - Vũng Tàu, Bình Thuận, Khánh Hòa, Đà Nẵng, Quảng Nam';
+      : 'Chưa ghé tỉnh/thành nào';
 
     const userPrompt = `Đây là danh sách các tỉnh thành tôi đã check-in trên bản đồ:
 [${listStr}].

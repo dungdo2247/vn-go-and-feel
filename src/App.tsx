@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { VietnamMap } from './components/VietnamMap';
 import { SmartPlanner } from './components/SmartPlanner';
 import { PhotoJournal } from './components/PhotoJournal';
+import { readUserData, writeUserData } from './lib/userStorage';
 import { FlutterCodeViewer } from './components/FlutterCodeViewer';
 import { 
   MapPin, Calendar, Camera, Code2, Smartphone, Monitor, 
@@ -20,37 +21,27 @@ function TravelAppInner() {
 
   // Visited provinces state
   const [visitedProvinces, setVisitedProvinces] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('vietnam_visited_provinces');
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return ['Bà Rịa - Vũng Tàu', 'Bình Thuận', 'Khánh Hòa', 'Đà Nẵng', 'Quảng Nam'];
+    const stored = readUserData<unknown>(effectiveUserId, 'visited-provinces', []);
+    return Array.isArray(stored) ? stored.filter(item => typeof item === 'string') : [];
   });
+  const visitedEdited = React.useRef(false);
 
   const [prefilledDestination, setPrefilledDestination] = useState<string>('');
   const [isMobileFrame, setIsMobileFrame] = useState<boolean>(true);
   const [currentTime, setCurrentTime] = useState('09:41');
 
-  // Load from Cloud Firestore when user or guest is ready
+  // UID changes remount the workspace; never merge across accounts.
   useEffect(() => {
+    let cancelled = false;
     fetchVisitedFromCloud().then((cloudProvinces) => {
-      if (cloudProvinces && cloudProvinces.length > 0) {
-        // Merge with local storage
-        setVisitedProvinces((prev) => {
-          const combined = Array.from(new Set([...prev, ...cloudProvinces]));
-          localStorage.setItem('vietnam_visited_provinces', JSON.stringify(combined));
-          return combined;
-        });
-      } else {
-        // First time cloud sync: push existing local provinces to cloud
-        syncVisitedToCloud(visitedProvinces);
+      if (!cancelled && !visitedEdited.current && cloudProvinces !== null) {
+        setVisitedProvinces(cloudProvinces);
+        try { writeUserData(effectiveUserId, 'visited-provinces', cloudProvinces); }
+        catch (error) { console.warn('Could not cache visited provinces:', error); }
       }
     });
-  }, [currentUser, effectiveUserId]);
+    return () => { cancelled = true; };
+  }, [effectiveUserId]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -65,6 +56,7 @@ function TravelAppInner() {
   }, []);
 
   const handleToggleProvince = (provinceName: string) => {
+    visitedEdited.current = true;
     setVisitedProvinces((prev) => {
       let updated: string[];
       if (prev.includes(provinceName)) {
@@ -72,7 +64,8 @@ function TravelAppInner() {
       } else {
         updated = [...prev, provinceName];
       }
-      localStorage.setItem('vietnam_visited_provinces', JSON.stringify(updated));
+      try { writeUserData(effectiveUserId, 'visited-provinces', updated); }
+      catch (error) { console.warn('Could not save visited provinces locally:', error); }
       // Save directly to Firebase Cloud Firestore!
       syncVisitedToCloud(updated);
       return updated;
@@ -285,10 +278,34 @@ function TravelAppInner() {
   );
 }
 
+function AuthenticatedWorkspace() {
+  const { effectiveUserId, isCloudReady, signInGoogle, isSyncing } = useAuth();
+  const [loginError, setLoginError] = useState('');
+  if (!isCloudReady) return <div className="min-h-screen bg-[#070e1b] text-white flex items-center justify-center">Đang tải tài khoản...</div>;
+  if (effectiveUserId) return <TravelAppInner key={effectiveUserId} />;
+  return (
+    <div className="min-h-screen bg-[#070e1b] text-white flex items-center justify-center p-6">
+      <div className="max-w-sm text-center space-y-5">
+        <h1 className="text-2xl font-bold">Việt Nam Đi & Nhớ</h1>
+        <p className="text-slate-300">Đăng nhập để quản lý lịch trình, nhật ký và các tỉnh đã đi của riêng bạn.</p>
+        <button disabled={isSyncing} className="bg-cyan-500 rounded-xl px-5 py-3 font-bold disabled:opacity-50"
+          onClick={async () => {
+            setLoginError('');
+            try { await signInGoogle(); }
+            catch (error: any) { setLoginError(error.message || 'Không thể đăng nhập. Vui lòng thử lại.'); }
+          }}>
+          {isSyncing ? 'Đang đăng nhập...' : 'Đăng nhập Google'}
+        </button>
+        {loginError && <p role="alert" className="text-rose-300 text-sm">{loginError}</p>}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <TravelAppInner />
+      <AuthenticatedWorkspace />
     </AuthProvider>
   );
 }

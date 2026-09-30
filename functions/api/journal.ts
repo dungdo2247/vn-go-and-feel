@@ -3,8 +3,8 @@ import { createApiHandler, callGeminiWithFallback } from '../../lib/gemini.ts';
 export const onRequestPost = createApiHandler(async (body, apiKey) => {
     const { imageBase64, mimeType, location, mood } = body;
 
-    const userPromptText = `- Địa điểm: [${location || 'Một góc Việt Nam bình yên'}]
-- Tâm trạng của tôi lúc này: [${mood || 'Bình yên, thư giãn, ngập tràn cảm hứng'}]
+    const userPromptText = `- Địa điểm: [${location || 'Chưa cung cấp'}]
+- Tâm trạng của tôi lúc này: [${mood || 'Chưa cung cấp'}]
 
 Hãy viết nhật ký cho bức ảnh này giúp tôi.`;
 

@@ -4,11 +4,11 @@ export const onRequestPost = createApiHandler(async (body, apiKey) => {
     const { destination, duration, companions, preferences, budget } = body;
 
     const userPrompt = `Hãy lên lịch trình du lịch cho tôi với các thông tin sau:
-- Điểm đến: [${destination || 'Đà Lạt'}]
-- Thời gian: [${duration || '3 ngày 2 đêm'}]
-- Đối tượng: [${companions || 'Đi cùng bạn bè'}]
-- Sở thích/Phong cách: [${preferences || 'Khám phá thiên nhiên, ẩm thực địa phương, check-in chụp ảnh'}]
-- Ngân sách tổng: [${budget || 'Khoảng 4 triệu VNĐ'}]`;
+- Điểm đến: [${destination || 'Chưa cung cấp'}]
+- Thời gian: [${duration || 'Chưa cung cấp'}]
+- Đối tượng: [${companions || 'Chưa cung cấp'}]
+- Sở thích/Phong cách: [${preferences || 'Chưa cung cấp'}]
+- Ngân sách tổng: [${budget || 'Chưa cung cấp'}]`;
 
     const systemInstruction = `Bạn là một chuyên gia thiết kế lịch trình du lịch nội địa Việt Nam. 
 Nhiệm vụ của bạn là tạo ra một lịch trình chi tiết dựa trên yêu cầu của người dùng.

@@ -8,28 +8,26 @@ import {
   Sparkles, Calendar, Users, Heart, DollarSign, 
   MapPin, Check, Copy, Bookmark, Trash2, ArrowRight, Sun, Sunrise, Moon, Navigation, Compass
 } from 'lucide-react';
+import { userStorageKey } from '../lib/userStorage';
 import confetti from 'canvas-confetti';
 
-const SAVED_PLANS_KEY = 'vietnam_saved_itineraries';
-const CURRENT_PLAN_KEY = 'vietnam_current_itinerary';
-
-function readSavedPlans(): TravelItinerary[] {
+function readSavedPlans(userId: string): TravelItinerary[] {
   try {
-    const plans = JSON.parse(localStorage.getItem(SAVED_PLANS_KEY) || '[]');
+    const plans = JSON.parse(localStorage.getItem(userStorageKey(userId, 'itineraries')) || '[]');
     return Array.isArray(plans) ? plans.filter(plan => plan && Array.isArray(plan.itinerary)) : [];
   } catch {
     return [];
   }
 }
 
-function readCurrentPlan(): TravelItinerary | null {
+function readCurrentPlan(userId: string): TravelItinerary | null {
   try {
-    const plan = JSON.parse(localStorage.getItem(CURRENT_PLAN_KEY) || 'null');
+    const plan = JSON.parse(localStorage.getItem(userStorageKey(userId, 'current-itinerary')) || 'null');
     if (plan && Array.isArray(plan.itinerary)) return plan;
   } catch {
     // Older or invalid browser data must not prevent the planner from opening.
   }
-  return readSavedPlans()[0] || null;
+  return readSavedPlans(userId)[0] || null;
 }
 
 interface SmartPlannerProps {
@@ -42,17 +40,19 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
   onClearInitialDestination,
 }) => {
   const { currentUser, effectiveUserId } = useAuth();
-  const [currentPlan, setCurrentPlan] = useState<TravelItinerary | null>(readCurrentPlan);
-  const [destination, setDestination] = useState(initialDestination || currentPlan?.destination || 'Đà Lạt');
-  const [duration, setDuration] = useState(currentPlan?.duration || '3 ngày 2 đêm');
-  const [companions, setCompanions] = useState(currentPlan?.companions || 'Nhóm bạn thân');
-  const [preferences, setPreferences] = useState(currentPlan?.preferences || 'Thiên nhiên, yên tĩnh, thích cafe đẹp và ăn đồ nướng');
-  const [budget, setBudget] = useState(currentPlan?.budget || 'Khoảng 4 triệu VNĐ');
+  const SAVED_PLANS_KEY = userStorageKey(effectiveUserId, 'itineraries');
+  const CURRENT_PLAN_KEY = userStorageKey(effectiveUserId, 'current-itinerary');
+  const [currentPlan, setCurrentPlan] = useState<TravelItinerary | null>(() => readCurrentPlan(effectiveUserId));
+  const [destination, setDestination] = useState(initialDestination || currentPlan?.destination || '');
+  const [duration, setDuration] = useState(currentPlan?.duration || '');
+  const [companions, setCompanions] = useState(currentPlan?.companions || '');
+  const [preferences, setPreferences] = useState(currentPlan?.preferences || '');
+  const [budget, setBudget] = useState(currentPlan?.budget || '');
 
   const [isLoading, setIsLoading] = useState(false);
   const [activeDay, setActiveDay] = useState(1);
   const [checkedActivities, setCheckedActivities] = useState<Record<string, boolean>>({});
-  const [savedPlans, setSavedPlans] = useState<TravelItinerary[]>(readSavedPlans);
+  const [savedPlans, setSavedPlans] = useState<TravelItinerary[]>(() => readSavedPlans(effectiveUserId));
   const [showSavedList, setShowSavedList] = useState(false);
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -79,6 +79,7 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
     if (effectiveUserId) {
       loadPlansFromCloud(effectiveUserId).then((cloudPlans) => {
         if (!cancelled && cloudPlans && cloudPlans.length > 0) {
+          setCurrentPlan(prev => prev || cloudPlans[0]);
           setSavedPlans((prev) => {
             const map = new Map<string, TravelItinerary>();
             prev.forEach((p) => p.id && map.set(p.id, p));
@@ -180,7 +181,7 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
     // Persist immediately, even if the user leaves while generation is finishing.
     // Match by ID so separate trips with the same title are not overwritten.
     const plans = new Map<string, TravelItinerary>();
-    [plan, ...savedPlans, ...readSavedPlans()].forEach(item => {
+    [plan, ...savedPlans, ...readSavedPlans(effectiveUserId)].forEach(item => {
       const id = item.id || item.title;
       if (!plans.has(id)) plans.set(id, item);
     });
@@ -374,6 +375,7 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
                 onChange={(e) => setDuration(e.target.value)}
                 className="w-full px-3 py-2 rounded-2xl border border-sky-100 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500 font-semibold"
               >
+                <option value="">Chọn thời gian</option>
                 <option value="2 ngày 1 đêm">2 ngày 1 đêm</option>
                 <option value="3 ngày 2 đêm">3 ngày 2 đêm</option>
                 <option value="4 ngày 3 đêm">4 ngày 3 đêm</option>
@@ -392,6 +394,7 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
                 onChange={(e) => setCompanions(e.target.value)}
                 className="w-full px-3 py-2 rounded-2xl border border-sky-100 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500 font-semibold"
               >
+                <option value="">Chọn đối tượng</option>
                 <option value="Đi cùng người yêu">Đi cùng người yêu</option>
                 <option value="Đi một mình (Solo travel)">Đi một mình</option>
                 <option value="Nhóm bạn thân">Nhóm bạn thân</option>
