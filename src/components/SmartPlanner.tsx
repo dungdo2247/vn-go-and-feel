@@ -10,6 +10,28 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
+const SAVED_PLANS_KEY = 'vietnam_saved_itineraries';
+const CURRENT_PLAN_KEY = 'vietnam_current_itinerary';
+
+function readSavedPlans(): TravelItinerary[] {
+  try {
+    const plans = JSON.parse(localStorage.getItem(SAVED_PLANS_KEY) || '[]');
+    return Array.isArray(plans) ? plans.filter(plan => plan && Array.isArray(plan.itinerary)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function readCurrentPlan(): TravelItinerary | null {
+  try {
+    const plan = JSON.parse(localStorage.getItem(CURRENT_PLAN_KEY) || 'null');
+    if (plan && Array.isArray(plan.itinerary)) return plan;
+  } catch {
+    // Older or invalid browser data must not prevent the planner from opening.
+  }
+  return readSavedPlans()[0] || null;
+}
+
 interface SmartPlannerProps {
   initialDestination?: string;
   onClearInitialDestination?: () => void;
@@ -20,17 +42,17 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
   onClearInitialDestination,
 }) => {
   const { currentUser, effectiveUserId } = useAuth();
-  const [destination, setDestination] = useState(initialDestination || 'Đà Lạt');
-  const [duration, setDuration] = useState('3 ngày 2 đêm');
-  const [companions, setCompanions] = useState('Nhóm bạn thân');
-  const [preferences, setPreferences] = useState('Thiên nhiên, yên tĩnh, thích cafe đẹp và ăn đồ nướng');
-  const [budget, setBudget] = useState('Khoảng 4 triệu VNĐ');
+  const [currentPlan, setCurrentPlan] = useState<TravelItinerary | null>(readCurrentPlan);
+  const [destination, setDestination] = useState(initialDestination || currentPlan?.destination || 'Đà Lạt');
+  const [duration, setDuration] = useState(currentPlan?.duration || '3 ngày 2 đêm');
+  const [companions, setCompanions] = useState(currentPlan?.companions || 'Nhóm bạn thân');
+  const [preferences, setPreferences] = useState(currentPlan?.preferences || 'Thiên nhiên, yên tĩnh, thích cafe đẹp và ăn đồ nướng');
+  const [budget, setBudget] = useState(currentPlan?.budget || 'Khoảng 4 triệu VNĐ');
 
   const [isLoading, setIsLoading] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<TravelItinerary | null>(null);
   const [activeDay, setActiveDay] = useState(1);
   const [checkedActivities, setCheckedActivities] = useState<Record<string, boolean>>({});
-  const [savedPlans, setSavedPlans] = useState<TravelItinerary[]>([]);
+  const [savedPlans, setSavedPlans] = useState<TravelItinerary[]>(readSavedPlans);
   const [showSavedList, setShowSavedList] = useState(false);
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -53,29 +75,26 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
 
   // Load saved itineraries from LocalStorage and Cloud Firestore
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('vietnam_saved_itineraries');
-      if (stored) {
-        setSavedPlans(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
+    let cancelled = false;
     if (effectiveUserId) {
       loadPlansFromCloud(effectiveUserId).then((cloudPlans) => {
-        if (cloudPlans && cloudPlans.length > 0) {
+        if (!cancelled && cloudPlans && cloudPlans.length > 0) {
           setSavedPlans((prev) => {
             const map = new Map<string, TravelItinerary>();
             prev.forEach((p) => p.id && map.set(p.id, p));
             cloudPlans.forEach((p) => p.id && map.set(p.id, p));
             const merged = Array.from(map.values());
-            localStorage.setItem('vietnam_saved_itineraries', JSON.stringify(merged));
+            try {
+              localStorage.setItem(SAVED_PLANS_KEY, JSON.stringify(merged));
+            } catch (error) {
+              console.warn('Could not cache itineraries:', error);
+            }
             return merged;
           });
         }
       });
     }
+    return () => { cancelled = true; };
   }, [effectiveUserId]);
 
   // Call server-side API (Prompt 1)
@@ -114,9 +133,8 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
         createdAt: new Date().toLocaleDateString('vi-VN'),
       };
 
-      setCurrentPlan(generatedData);
-      setActiveDay(1);
-      setCheckedActivities({});
+      persistPlan(generatedData);
+      selectPlan(generatedData);
 
       confetti({
         particleCount: 55,
@@ -146,29 +164,56 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
     }));
   };
 
-  const handleSavePlan = () => {
-    if (!currentPlan) return;
-    const exists = savedPlans.some((p) => p.id === currentPlan.id || p.title === currentPlan.title);
-    let updated: TravelItinerary[];
-    if (exists) {
-      updated = savedPlans.map((p) => (p.title === currentPlan.title ? currentPlan : p));
-    } else {
-      updated = [currentPlan, ...savedPlans];
+  const selectPlan = (plan: TravelItinerary) => {
+    setCurrentPlan(plan);
+    setActiveDay(plan.itinerary[0]?.day || 1);
+    setCheckedActivities({});
+    try {
+      localStorage.setItem(CURRENT_PLAN_KEY, JSON.stringify(plan));
+    } catch (error) {
+      console.warn('Could not remember current itinerary:', error);
+      setErrorMessage('Không thể lưu trên trình duyệt này. Vui lòng kiểm tra dung lượng hoặc quyền lưu trữ.');
     }
-    setSavedPlans(updated);
-    localStorage.setItem('vietnam_saved_itineraries', JSON.stringify(updated));
+  };
 
-    // Save to Cloud Firestore
-    if (effectiveUserId) {
-      savePlanToCloud(effectiveUserId, currentPlan);
+  const persistPlan = (plan: TravelItinerary) => {
+    // Persist immediately, even if the user leaves while generation is finishing.
+    // Match by ID so separate trips with the same title are not overwritten.
+    const plans = new Map<string, TravelItinerary>();
+    [plan, ...savedPlans, ...readSavedPlans()].forEach(item => {
+      const id = item.id || item.title;
+      if (!plans.has(id)) plans.set(id, item);
+    });
+    const updated = Array.from(plans.values());
+    setSavedPlans(updated);
+    try {
+      localStorage.setItem(SAVED_PLANS_KEY, JSON.stringify(updated));
+    } catch (error) {
+      console.warn('Could not save itinerary locally:', error);
+      setErrorMessage('Không thể lưu trên trình duyệt này. Vui lòng kiểm tra dung lượng hoặc quyền lưu trữ.');
     }
+    if (effectiveUserId) {
+      void savePlanToCloud(effectiveUserId, plan);
+    }
+  };
+
+  const handleSavePlan = () => {
+    if (currentPlan) persistPlan(currentPlan);
   };
 
   const handleDeleteSaved = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const updated = savedPlans.filter((p) => p.id !== id);
     setSavedPlans(updated);
-    localStorage.setItem('vietnam_saved_itineraries', JSON.stringify(updated));
+    try {
+      localStorage.setItem(SAVED_PLANS_KEY, JSON.stringify(updated));
+      if (currentPlan?.id === id) {
+        localStorage.removeItem(CURRENT_PLAN_KEY);
+      }
+    } catch (error) {
+      console.warn('Could not remove itinerary locally:', error);
+    }
+    if (currentPlan?.id === id) setCurrentPlan(null);
 
     // Delete from Cloud Firestore
     if (effectiveUserId) {
@@ -258,7 +303,7 @@ export const SmartPlanner: React.FC<SmartPlannerProps> = ({
                     key={plan.id}
                     whileHover={{ scale: 1.015, x: 2 }}
                     onClick={() => {
-                      setCurrentPlan(plan);
+                      selectPlan(plan);
                       setShowSavedList(false);
                     }}
                     className="p-3 rounded-2xl bg-sky-50/60 hover:bg-sky-100/60 border border-sky-100 flex items-center justify-between cursor-pointer transition-colors"
