@@ -15,6 +15,7 @@ interface AuthContextType {
   signOutUser: () => Promise<void>;
   syncVisitedToCloud: (provinces: string[]) => Promise<void>;
   fetchVisitedFromCloud: () => Promise<string[] | null>;
+  continueAsGuest: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,14 +28,20 @@ const AuthContext = createContext<AuthContextType>({
   signOutUser: async () => {},
   syncVisitedToCloud: async () => {},
   fetchVisitedFromCloud: async () => null,
+  continueAsGuest: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCloudReady, setIsCloudReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
 
-  const effectiveUserId = currentUser && !currentUser.isAnonymous ? currentUser.uid : '';
+  const effectiveUserId = currentUser && !currentUser.isAnonymous 
+    ? currentUser.uid 
+    : isGuest 
+    ? 'guest-local' 
+    : '';
 
   useEffect(() => {
     // Restore the signed-in account.
@@ -46,10 +53,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
+  const continueAsGuest = () => {
+    setIsGuest(true);
+  };
+
   const signInGoogle = async () => {
     setIsSyncing(true);
     try {
       await signInWithGoogle();
+      setIsGuest(false);
     } finally {
       setIsSyncing(false);
     }
@@ -60,13 +72,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await logOut();
       setCurrentUser(null);
+      setIsGuest(false);
     } finally {
       setIsSyncing(false);
     }
   };
 
   const syncVisitedToCloud = async (provinces: string[]) => {
-    if (!effectiveUserId) return;
+    if (!effectiveUserId || isGuest) return;
     setIsSyncing(true);
     try {
       await saveVisitedProvincesToCloud(effectiveUserId, provinces);
@@ -76,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const fetchVisitedFromCloud = async () => {
-    if (!effectiveUserId) return null;
+    if (!effectiveUserId || isGuest) return null;
     return await loadVisitedProvincesFromCloud(effectiveUserId);
   };
 
@@ -92,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOutUser,
         syncVisitedToCloud,
         fetchVisitedFromCloud,
+        continueAsGuest,
       }}
     >
       {children}

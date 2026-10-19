@@ -279,7 +279,7 @@ function TravelAppInner() {
 }
 
 function AuthenticatedWorkspace() {
-  const { effectiveUserId, isCloudReady, signInGoogle, isSyncing } = useAuth();
+  const { effectiveUserId, isCloudReady, signInGoogle, isSyncing, continueAsGuest } = useAuth();
   const [loginError, setLoginError] = useState('');
   if (!isCloudReady) return <div className="min-h-screen bg-[#070e1b] text-white flex items-center justify-center">Đang tải tài khoản...</div>;
   if (effectiveUserId) return <TravelAppInner key={effectiveUserId} />;
@@ -288,15 +288,32 @@ function AuthenticatedWorkspace() {
       <div className="max-w-sm text-center space-y-5">
         <h1 className="text-2xl font-bold">Việt Nam Đi & Nhớ</h1>
         <p className="text-slate-300">Đăng nhập để quản lý lịch trình, nhật ký và các tỉnh đã đi của riêng bạn.</p>
-        <button disabled={isSyncing} className="bg-cyan-500 rounded-xl px-5 py-3 font-bold disabled:opacity-50"
-          onClick={async () => {
-            setLoginError('');
-            try { await signInGoogle(); }
-            catch (error: any) { setLoginError(error.message || 'Không thể đăng nhập. Vui lòng thử lại.'); }
-          }}>
-          {isSyncing ? 'Đang đăng nhập...' : 'Đăng nhập Google'}
-        </button>
-        {loginError && <p role="alert" className="text-rose-300 text-sm">{loginError}</p>}
+        <div className="flex flex-col gap-3">
+          <button disabled={isSyncing} className="w-full bg-cyan-500 hover:bg-cyan-400 text-white rounded-xl px-5 py-3 font-bold disabled:opacity-50 transition-colors cursor-pointer"
+            onClick={async () => {
+              setLoginError('');
+              try { await signInGoogle(); }
+              catch (error: any) { setLoginError(error.message || 'Không thể đăng nhập. Vui lòng thử lại.'); }
+            }}>
+            {isSyncing ? 'Đang đăng nhập...' : 'Đăng nhập Google'}
+          </button>
+          <button 
+            onClick={continueAsGuest}
+            className="w-full bg-white/10 hover:bg-white/20 text-cyan-200 border border-white/15 rounded-xl px-5 py-2.5 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            Trải nghiệm ngay (Chế độ Khách / Xem Bản Đồ)
+          </button>
+        </div>
+        {loginError && (
+          <div role="alert" className="text-rose-300 text-xs bg-rose-950/40 border border-rose-800/50 p-2.5 rounded-xl text-left space-y-1">
+            <p className="font-semibold">{loginError}</p>
+            {loginError.includes('auth/unauthorized-domain') && (
+              <p className="text-[11px] text-slate-300">
+                👉 Gợi ý: Hãy thêm <code>localhost</code> vào <b>Authorized domains</b> trong Firebase Console, hoặc bấm <b>&ldquo;Trải nghiệm ngay&rdquo;</b> ở trên để xem bản đồ mà không cần đăng nhập.
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
