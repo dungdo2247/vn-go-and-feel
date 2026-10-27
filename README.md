@@ -1,6 +1,6 @@
 # Việt Nam Đi & Nhớ — Cloudflare Pages
 
-Nhánh `cloudflare` chạy React/Vite trên Pages và 3 API Gemini trên Pages Functions.
+Nhánh `cloudflare` chạy React/Vite trên Pages và 3 API du lịch thông minh trên Pages Functions sử dụng **Cloudflare Workers AI (DeepSeek)** tích hợp sẵn.
 Firebase Authentication/Firestore tiếp tục sử dụng cấu hình hiện có.
 
 ## Deploy từ GitHub
@@ -18,19 +18,17 @@ Firebase Authentication/Firestore tiếp tục sử dụng cấu hình hiện c�
    | Root directory | Để trống |
    | Node version | 22, từ `.node-version` |
 
-5. Trong project Settings → Variables and Secrets, thêm **secret** `GEMINI_API_KEY`
-   cho Production; thêm riêng cho Preview nếu muốn thử các nhánh/preview.
-   Không đặt tên `VITE_GEMINI_API_KEY` và không commit key vào source.
-6. Deploy hoặc redeploy sau khi thêm secret. Cloudflare tự build thư mục `functions/`.
+5. Cloudflare Workers AI (DeepSeek) được tự động cấu hình qua binding `AI` trong `wrangler.jsonc`.
+   - Không bắt buộc cấu hình `GEMINI_API_KEY` nữa.
+   - Nếu muốn dự phòng, bạn vẫn có thể thêm secret `GEMINI_API_KEY` trong Settings → Variables and Secrets.
+6. Deploy hoặc redeploy. Cloudflare tự build thư mục `functions/`.
 7. Mở URL `*.pages.dev` do Cloudflare cấp.
 8. Firebase Console → Authentication → Settings → Authorized domains:
    thêm hostname `*.pages.dev` cụ thể của app và custom domain nếu có (không thêm protocol/path).
-   Bật Google sign-in; workspace cá nhân chỉ dành cho tài khoản Google đã đăng nhập.
+   Bật Google sign-in; hỗ trợ cả chế độ Khách (Guest mode) để xem trước.
 
-`wrangler.jsonc` là cấu hình Pages, output `dist`; `public/_routes.json` chỉ gọi
-Functions cho `/api/*`. Firebase không cần chuyển sang Cloudflare.
-Hãy dùng Git integration hoặc Wrangler để deploy cả Functions; không chỉ upload `dist`
-bằng thao tác kéo/thả trên dashboard.
+`wrangler.jsonc` là cấu hình Pages, output `dist`, kèm Workers AI binding `AI`; `public/_routes.json` chỉ gọi
+Functions cho `/api/*`.
 
 ## Chạy local
 
@@ -38,14 +36,12 @@ Yêu cầu Node.js >= 22.12.
 
 ```sh
 npm ci
-cp .dev.vars.example .dev.vars
-# Sửa .dev.vars để điền GEMINI_API_KEY thật.
 npm run dev
 ```
 
 Mở URL Wrangler in ra (thường `http://localhost:8788`). `dev` build giao diện rồi chạy
 Pages và Functions cùng origin; chạy lại sau khi sửa UI. `npm run dev:ui` chạy Vite
-để xem UI với hot reload, nhưng không có API Gemini.
+để xem UI với hot reload.
 
 ```sh
 npm run lint
@@ -54,37 +50,31 @@ npm run build
 npm run check:functions
 ```
 
-Tests giả lập phản hồi Gemini, không gọi API thật và không tốn quota.
-
 ## API
 
-| Route | Chức năng |
-| --- | --- |
-| `POST /api/planner` | Lên lịch trình, trả JSON có cấu trúc |
-| `POST /api/journal` | Nhận ảnh base64 và tạo nhật ký |
-| `POST /api/recommend-destination` | Gợi ý điểm đến từ các tỉnh đã ghé |
+| Route | Chức năng | Model mặc định |
+| --- | --- | --- |
+| `POST /api/planner` | Lên lịch trình, trả JSON có cấu trúc | DeepSeek R1 Distill Qwen 32B |
+| `POST /api/journal` | Tạo nhật ký và caption từ địa điểm & cảm xúc | DeepSeek R1 / V4.1 Flash |
+| `POST /api/recommend-destination` | Phân tích Gu & gợi ý điểm đến tiếp theo | DeepSeek R1 Distill Qwen 32B |
 
-Giữ nguyên request/response mà frontend hiện tại sử dụng. API key được đọc từ
-`context.env.GEMINI_API_KEY` tại runtime và gửi qua header đến Gemini REST API.
-Không có server Express và không dùng API key ở frontend. Giữ danh sách model hiện có
-`gemini-3.8-flash`, `gemini-3.1-flash-lite`; retry/fallback khi Gemini trả 429/503.
-Request JSON giới hạn 25 MB, tương đương giới hạn Express cũ.
+Mặc định gọi Cloudflare Workers AI với model DeepSeek (`@cf/deepseek-ai/deepseek-r1-distill-qwen-32b`, `@cf/deepseek-ai/deepseek-v4.1-flash-1017`).
+Hệ thống tự động lọc bỏ các thẻ suy luận (`<think>...</think>`) của DeepSeek R1 để trả về dữ liệu chuẩn JSON cho frontend.
+Hỗ trợ fallback sang Gemini nếu hệ thống Workers AI chưa được kích hoạt hoặc gặp lỗi.
 
 ## Kiểm tra sau deploy
 
-- Giao diện tải được; đăng nhập Google không báo `auth/unauthorized-domain`.
-- Tạo lịch trình, tạo nhật ký từ ảnh và gợi ý điểm đến đều trả `success: true`.
-- Khi thiếu secret, API trả JSON lỗi rõ ràng thay vì trả HTML.
-- Kiểm tra quyền truy cập model/quota của Gemini key nếu AI báo lỗi.
+- Giao diện tải được; đăng nhập Google hoặc bấm "Trải nghiệm ngay (Chế độ Khách)".
+- Tạo lịch trình, tạo nhật ký ảnh và gợi ý điểm đến đều trả `success: true`.
+- Không phụ thuộc vào API key bên thứ ba nhờ sử dụng Cloudflare Workers AI built-in.
 
 ## Dữ liệu theo tài khoản
 
 - Đăng nhập Google trước khi mở workspace cá nhân.
-- Lịch trình, lịch trình đang xem, nhật ký và tỉnh đã đi được cache theo Firebase UID.
+- Lịch trình, lịch trình đang xem, nhật ký và tỉnh đã đi được cache theo Firebase UID (hoặc lưu local khi dùng chế độ Khách).
 - Đổi tài khoản/đăng xuất đóng workspace cũ; phản hồi tải dữ liệu cũ không nhập vào tài khoản mới.
 - Tài khoản mới không có dữ liệu mẫu. Form trống; không tự chọn ảnh mẫu.
 - Nhật ký chỉ ghi vào `users/{uid}/journals`, không tự công khai.
-- Key local chung từ bản cũ không được tự nhập vào tài khoản vì không xác định được chủ sở hữu.
 - Dữ liệu đã lưu trên Firestore dưới UID vẫn được tải về cho đúng tài khoản.
 
 ### Áp dụng quyền Firestore (bắt buộc, tách riêng với deploy Pages)
@@ -99,15 +89,9 @@ npx firebase-tools login
 npx firebase-tools deploy --only firestore:rules --project gen-lang-client-0850321147
 ```
 
-Rules chỉ cho chủ UID đọc/ghi dữ liệu; chặn guest/anonymous và chặn đọc nhật ký của người khác,
-bao gồm các bản sao public cũ. Không xóa dữ liệu cũ.
-
-Các API AI là stateless và vẫn chưa yêu cầu đăng nhập ở server; tất cả dùng quota của Gemini key.
-Quyền sở hữu dữ liệu được thực thi ở Firestore, không phụ thuộc vào việc ẩn UI.
-
 ## Tài liệu
 
 - https://developers.cloudflare.com/pages/framework-guides/deploy-a-react-site/
 - https://developers.cloudflare.com/pages/functions/get-started/
-- https://developers.cloudflare.com/pages/functions/wrangler-configuration/
-- https://developers.cloudflare.com/pages/functions/local-development/
+- https://developers.cloudflare.com/workers-ai/models/deepseek-r1-distill-qwen-32b/
+- https://developers.cloudflare.com/pages/functions/bindings/#workers-ai

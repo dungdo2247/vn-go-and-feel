@@ -1,6 +1,6 @@
-import { createApiHandler, callGeminiWithFallback } from '../../lib/gemini.ts';
+import { createApiHandler, callAi, extractJson } from '../../lib/gemini.ts';
 
-export const onRequestPost = createApiHandler(async (body, apiKey) => {
+export const onRequestPost = createApiHandler(async (body, env) => {
     const { destination, duration, companions, preferences, budget } = body;
 
     const userPrompt = `Hãy lên lịch trình du lịch cho tôi với các thông tin sau:
@@ -32,46 +32,48 @@ Luôn luôn trả lời CHỈ BẰNG một chuỗi JSON hợp lệ (không kèm 
 }
 Chỉ gợi ý các địa điểm có thật và phù hợp với thực tế giao thông tại Việt Nam.`;
 
-    const response = await callGeminiWithFallback(apiKey, {
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            title: { type: 'STRING' },
-            summary: { type: 'STRING' },
-            itinerary: {
-              type: 'ARRAY',
-              items: {
-                type: 'OBJECT',
-                properties: {
-                  day: { type: 'INTEGER' },
-                  activities: {
-                    type: 'ARRAY',
-                    items: {
-                      type: 'OBJECT',
-                      properties: {
-                        time: { type: 'STRING' },
-                        locationName: { type: 'STRING' },
-                        description: { type: 'STRING' },
-                        estimatedCost: { type: 'STRING' },
-                      },
-                      required: ['time', 'locationName', 'description', 'estimatedCost'],
+    const response = await callAi(env, {
+      userPrompt,
+      systemInstruction,
+      jsonSchema: {
+        type: 'OBJECT',
+        properties: {
+          title: { type: 'STRING' },
+          summary: { type: 'STRING' },
+          itinerary: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                day: { type: 'INTEGER' },
+                activities: {
+                  type: 'ARRAY',
+                  items: {
+                    type: 'OBJECT',
+                    properties: {
+                      time: { type: 'STRING' },
+                      locationName: { type: 'STRING' },
+                      description: { type: 'STRING' },
+                      estimatedCost: { type: 'STRING' },
                     },
+                    required: ['time', 'locationName', 'description', 'estimatedCost'],
                   },
                 },
-                required: ['day', 'activities'],
               },
+              required: ['day', 'activities'],
             },
           },
-          required: ['title', 'summary', 'itinerary'],
         },
+        required: ['title', 'summary', 'itinerary'],
       },
     });
 
     const rawText = response.text || '{}';
-    const parsedData = JSON.parse(rawText);
+    let parsedData;
+    try {
+      parsedData = extractJson(rawText);
+    } catch {
+      parsedData = JSON.parse(rawText);
+    }
     return ({ success: true, data: parsedData });
 });

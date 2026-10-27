@@ -1,6 +1,6 @@
-import { createApiHandler, callGeminiWithFallback } from '../../lib/gemini.ts';
+import { createApiHandler, callAi } from '../../lib/gemini.ts';
 
-export const onRequestPost = createApiHandler(async (body, apiKey) => {
+export const onRequestPost = createApiHandler(async (body, env) => {
     const { visitedProvinces } = body;
 
     const listStr = Array.isArray(visitedProvinces) && visitedProvinces.length > 0
@@ -22,11 +22,9 @@ Trình bày theo format sau:
 - 💡 Lý do: (Vì sao lại chọn nơi này dựa trên lịch sử của họ)
 - 🎒 3 Trải nghiệm phải thử tại đây: (Bullet points)`;
 
-    const response = await callGeminiWithFallback(apiKey, {
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-      },
+    const response = await callAi(env, {
+      userPrompt,
+      systemInstruction,
     });
 
     const outputText = response.text || '';

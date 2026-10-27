@@ -99,6 +99,51 @@ test('upstream errors never expose secrets or internal error bodies', async () =
   assert.ok(!(await response.text()).includes('test-secret'));
 });
 
+test('planner supports Cloudflare Workers AI with DeepSeek and strips think tags', async () => {
+  const itinerary = { title: 'Đà Lạt', summary: 'Chuyến đi', itinerary: [{ day: 1, activities: [] }] };
+  let calledModel = '';
+  const mockAi = {
+    run: async (model: string, inputs: any) => {
+      calledModel = model;
+      assert.ok(inputs.messages.some((m: any) => typeof m.content === 'string' && m.content.includes('Đà Lạt')));
+      return {
+        response: `<think>Reasoning about Da Lat travel...</think>\`\`\`json\n${JSON.stringify(itinerary)}\n\`\`\``
+      };
+    }
+  };
+  const ctx = {
+    request: new Request('https://example.pages.dev/api/planner', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destination: 'Đà Lạt' }),
+    }),
+    env: { AI: mockAi },
+  };
+  const response = await planner(ctx);
+  assert.equal(response.status, 200);
+  assert.ok(calledModel.includes('deepseek'));
+  const data = await response.json();
+  assert.deepEqual(data, { success: true, data: itinerary });
+});
+
+test('journal supports Cloudflare Workers AI with DeepSeek', async () => {
+  const mockAi = {
+    run: async (_model: string, _inputs: any) => ({
+      response: `<think>Thought</think>🖋️: Ngày nắng đẹp\n📖: Khám phá Hội An thanh bình.\n🏷️: #HoiAn #Travel`
+    })
+  };
+  const ctx = {
+    request: new Request('https://example.pages.dev/api/journal', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'Hội An', mood: 'Bình yên' }),
+    }),
+    env: { AI: mockAi },
+  };
+  const response = await journal(ctx);
+  const data = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(data.data.caption, 'Ngày nắng đẹp');
+  assert.equal(data.data.journal, 'Khám phá Hội An thanh bình.');
+  assert.deepEqual(data.data.hashtags, ['#HoiAn', '#Travel']);
+});
+
 test('API middleware returns JSON for unsupported methods and unknown routes', async () => {
   const next = async () => Response.json({ success: true });
   const method = await onRequest({ request: new Request('https://example.pages.dev/api/planner'), next });

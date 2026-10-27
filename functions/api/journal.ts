@@ -1,6 +1,6 @@
-import { createApiHandler, callGeminiWithFallback } from '../../lib/gemini.ts';
+import { createApiHandler, callAi } from '../../lib/gemini.ts';
 
-export const onRequestPost = createApiHandler(async (body, apiKey) => {
+export const onRequestPost = createApiHandler(async (body, env) => {
     const { imageBase64, mimeType, location, mood } = body;
 
     const userPromptText = `- Địa điểm: [${location || 'Chưa cung cấp'}]
@@ -16,27 +16,11 @@ Dựa vào bức ảnh và từ khóa, hãy viết một đoạn nhật ký du l
 - 📖 Nhật ký (Khoảng 3-4 câu miêu tả vẻ đẹp trong ảnh và cảm xúc).
 - 🏷️ Hashtags (3-5 hashtags liên quan đến cảnh vật và địa danh).`;
 
-    const parts: any[] = [];
-
-    if (imageBase64) {
-      const cleanData = imageBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '');
-      parts.push({
-        inlineData: {
-          mimeType: mimeType || 'image/jpeg',
-          data: cleanData,
-        },
-      });
-    }
-
-    parts.push({
-      text: userPromptText,
-    });
-
-    const response = await callGeminiWithFallback(apiKey, {
-      contents: { parts },
-      config: {
-        systemInstruction,
-      },
+    const response = await callAi(env, {
+      userPrompt: userPromptText,
+      systemInstruction,
+      imageBase64,
+      mimeType,
     });
 
     const outputText = response.text || '';
